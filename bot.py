@@ -1,11 +1,10 @@
 import logging
-import os
 import re
 import json
 import requests
 import time
 from requests_oauthlib import OAuth1Session
-from telegram import Update, ReplyKeyboardMarkup
+from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ConversationHandler
 
 # Ваши данные для Discogs API
@@ -14,9 +13,6 @@ consumer_secret = "qbtwSvSvQrCnnkvuTlBCPyiPiqLAiGYL"
 callback_uri = "oob"
 user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 token_file = "discogs_token.json"  # Файл для хранения токена
-
-# Состояния для ConversationHandler
-CHOOSING, GET_LINKS = range(2)
 
 # Логирование
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -175,24 +171,14 @@ def get_youtube_links_from_release(release_id, oauth_session):
 
 # Обработчик команды /start
 async def start(update: Update, context):
-    reply_keyboard = [["По артистам", "По лейблам"]]
     await update.message.reply_text(
-        "Выберите, по чему искать ссылки на YouTube:",
-        reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True),
+        "Чтобы начать поиск YouTube-ссылок на сайте Discogs, отправьте ссылки на страницы артистов или лейблов, каждая с новой строки."
     )
-    return CHOOSING
-
-# Обработчик выбора типа поиска
-async def choose_search_type(update: Update, context):
-    user_choice = update.message.text
-    context.user_data["search_type"] = user_choice
-    await update.message.reply_text("Введите ссылки на страницы артистов или лейблов (каждая ссылка с новой строки):")
-    return GET_LINKS
+    return 1
 
 # Обработчик получения ссылок
 async def get_links(update: Update, context):
     links = update.message.text.split("\n")
-    search_type = context.user_data.get("search_type")
     oauth_session = get_oauth_session()
 
     if not oauth_session:
@@ -205,12 +191,12 @@ async def get_links(update: Update, context):
         if not link:
             continue
 
-        if search_type == "По артистам":
-            artist_id = extract_artist_id_from_url(link)
-            if not artist_id:
-                results[link] = {"error": "Не удалось извлечь ID артиста"}
-                continue
+        # Определяем тип ссылки (артист или лейбл)
+        artist_id = extract_artist_id_from_url(link)
+        label_id = extract_label_id_from_url(link)
 
+        if artist_id:
+            # Обработка артиста
             artist_name = get_artist_name(artist_id, oauth_session)
             if not artist_name:
                 results[link] = {"error": "Не удалось получить имя артиста"}
@@ -228,12 +214,8 @@ async def get_links(update: Update, context):
 
             results[link] = {"name": artist_name, "file": filename}
 
-        elif search_type == "По лейблам":
-            label_id = extract_label_id_from_url(link)
-            if not label_id:
-                results[link] = {"error": "Не удалось извлечь ID лейбла"}
-                continue
-
+        elif label_id:
+            # Обработка лейбла
             label_name = get_label_name(label_id, oauth_session)
             if not label_name:
                 results[link] = {"error": "Не удалось получить название лейбла"}
@@ -251,6 +233,9 @@ async def get_links(update: Update, context):
 
             results[link] = {"name": label_name, "file": filename}
 
+        else:
+            results[link] = {"error": "Не удалось определить тип ссылки"}
+
     # Отправка файлов пользователю
     for link, data in results.items():
         if "error" in data:
@@ -259,11 +244,7 @@ async def get_links(update: Update, context):
             with open(data["file"], "rb") as f:
                 await update.message.reply_document(f, caption=f"Ссылки для {data['name']}")
 
-    return ConversationHandler.END
-
-# Обработчик отмены
-async def cancel(update: Update, context):
-    await update.message.reply_text("Поиск отменён.")
+    await update.message.reply_text("Поиск завершён. Чтобы начать новый поиск, нажмите /start.")
     return ConversationHandler.END
 
 # Основная функция
@@ -273,10 +254,9 @@ def main():
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            CHOOSING: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_search_type)],
-            GET_LINKS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_links)],
+            1: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_links)],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=[],
     )
 
     application.add_handler(conv_handler)
