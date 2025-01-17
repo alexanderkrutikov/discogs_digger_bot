@@ -3,6 +3,7 @@ import os
 import re
 import json
 import requests
+import time
 from requests_oauthlib import OAuth1Session
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ConversationHandler
@@ -47,6 +48,130 @@ def get_oauth_session():
         )
     else:
         return None
+
+# Извлечение ID артиста из URL
+def extract_artist_id_from_url(url):
+    match = re.search(r"/artist/(\d+)", url)
+    if match:
+        return match.group(1)
+    return None
+
+# Извлечение ID лейбла из URL
+def extract_label_id_from_url(url):
+    match = re.search(r"/label/(\d+)", url)
+    if match:
+        return match.group(1)
+    return None
+
+# Получение имени артиста
+def get_artist_name(artist_id, oauth_session):
+    try:
+        api_url = f"https://api.discogs.com/artists/{artist_id}"
+        headers = {"User-Agent": user_agent}
+        response = oauth_session.get(api_url, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        return data.get("name")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Ошибка при получении имени артиста: {e}")
+        return None
+
+# Получение имени лейбла
+def get_label_name(label_id, oauth_session):
+    try:
+        api_url = f"https://api.discogs.com/labels/{label_id}"
+        headers = {"User-Agent": user_agent}
+        response = oauth_session.get(api_url, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        return data.get("name")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Ошибка при получении имени лейбла: {e}")
+        return None
+
+# Получение ID релизов артиста
+def get_artist_release_ids(artist_id, oauth_session):
+    release_ids = []
+    page_num = 1
+    per_page = 100
+
+    while True:
+        try:
+            search_url = f"https://api.discogs.com/database/search?artist_id={artist_id}&type=release&page={page_num}&per_page={per_page}"
+            headers = {"User-Agent": user_agent}
+            response = oauth_session.get(search_url, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+
+            if page_num > data['pagination']['pages']:
+                break
+
+            if not data['results']:
+                break
+
+            for release in data['results']:
+                release_ids.append(release['id'])
+
+            page_num += 1
+            time.sleep(2)  # Задержка между запросами
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Ошибка при получении релизов артиста: {e}")
+            break
+
+    return release_ids
+
+# Получение ID релизов лейбла
+def get_label_release_ids(label_id, oauth_session):
+    release_ids = []
+    page_num = 1
+    per_page = 100
+
+    while True:
+        try:
+            api_url = f"https://api.discogs.com/labels/{label_id}/releases?page={page_num}&per_page={per_page}"
+            headers = {"User-Agent": user_agent}
+            response = oauth_session.get(api_url, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+
+            if page_num > data['pagination']['pages']:
+                break
+
+            if not data['releases']:
+                break
+
+            for release in data['releases']:
+                release_ids.append(release['id'])
+
+            page_num += 1
+            time.sleep(2)  # Задержка между запросами
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Ошибка при получении релизов лейбла: {e}")
+            break
+
+    return release_ids
+
+# Получение YouTube-ссылок из релиза
+def get_youtube_links_from_release(release_id, oauth_session):
+    youtube_links = []
+    api_url = f"https://api.discogs.com/releases/{release_id}"
+    headers = {"User-Agent": user_agent}
+
+    try:
+        response = oauth_session.get(api_url, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+
+        if 'videos' in data:
+            for video in data['videos']:
+                youtube_links.append(video['uri'])
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Ошибка при получении YouTube-ссылок: {e}")
+
+    return youtube_links
 
 # Обработчик команды /start
 async def start(update: Update, context):
