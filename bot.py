@@ -249,7 +249,7 @@ async def get_links(update: Update, context):
 
 # Основная функция
 def main():
-    application = ApplicationBuilder().token("7711337892:AAEm15FsePjsgikQOBCi63GIi50jmMk8fQ8").build()
+    application = ApplicationBuilder().token("7841159840:AAGOyN5tacI6HvRtwA2_UlL8H7htnDY2Cvc").build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
