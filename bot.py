@@ -209,10 +209,12 @@ async def get_links(update: Update, context):
                 youtube_links.extend(get_youtube_links_from_release(release_id, oauth_session))
                 time.sleep(1)  # Задержка между запросами
 
-            with open(filename, "w") as f:
-                f.write("\n".join(set(youtube_links)))
-
-            results[link] = {"name": artist_name, "file": filename}
+            if youtube_links:  # Проверка на наличие ссылок
+                with open(filename, "w") as f:
+                    f.write("\n".join(set(youtube_links)))
+                results[link] = {"name": artist_name, "file": filename, "count": len(set(youtube_links))} # Добавляем количество ссылок
+            else:
+                results[link] = {"name": artist_name, "message": "Не найдено YouTube ссылок"}
 
         elif label_id:
             # Обработка лейбла
@@ -228,10 +230,12 @@ async def get_links(update: Update, context):
                 youtube_links.extend(get_youtube_links_from_release(release_id, oauth_session))
                 time.sleep(1)  # Задержка между запросами
 
-            with open(filename, "w") as f:
-                f.write("\n".join(set(youtube_links)))
-
-            results[link] = {"name": label_name, "file": filename}
+            if youtube_links: # Проверка на наличие ссылок
+                with open(filename, "w") as f:
+                    f.write("\n".join(set(youtube_links)))
+                results[link] = {"name": label_name, "file": filename, "count": len(set(youtube_links))} # Добавляем количество ссылок
+            else:
+                results[link] = {"name": label_name, "message": "Не найдено YouTube ссылок"}
 
         else:
             results[link] = {"error": "Не удалось определить тип ссылки"}
@@ -240,9 +244,13 @@ async def get_links(update: Update, context):
     for link, data in results.items():
         if "error" in data:
             await update.message.reply_text(f"Ошибка обработки ссылки {link}: {data['error']}")
+        elif "message" in data:
+            await update.message.reply_text(f"Для {link} ({data['name']}): {data['message']}")
         else:
+            count = data['count']
+            message = f"Найдено {count} ссыл{'ок' if count % 10 == 0 or 5 <= count % 10 <= 9 or 11 <= count % 100 <= 14 else 'ка' if count % 10 == 1 else 'ки'}"
             with open(data["file"], "rb") as f:
-                await update.message.reply_document(f, caption=f"Ссылки для {data['name']}")
+                await update.message.reply_document(f, caption=f"{message} для {data['name']}")
 
     await update.message.reply_text("Поиск завершён. Чтобы начать новый поиск, нажмите /start.")
     return ConversationHandler.END
